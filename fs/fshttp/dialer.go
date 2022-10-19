@@ -10,6 +10,7 @@ import (
 
 	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/accounting"
+	"github.com/spacemonkeygo/openssl"
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
 )
@@ -52,10 +53,22 @@ var warnDSCPFail, warnDSCPWindows sync.Once
 
 // DialContext connects to the network address using the provided context.
 func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
-	c, err := d.Dialer.DialContext(ctx, network, address)
+	ci := fs.GetConfig(ctx)
+	octx, err := openssl.NewCtx()
 	if err != nil {
-		return c, err
+		return nil, err
 	}
+	if ci.CaCert != "" {
+		err = octx.LoadVerifyLocations("/etc/ssl/certs/ca-certificates.crt", "")
+		if err != nil {
+			return nil, err
+		}
+	}
+	oconn, err := openssl.Dial(network, address, octx, 0)
+	if err != nil {
+		return nil, err
+	}
+	c := oconn.UnderlyingConn()
 
 	if d.tclass != 0 {
 		// IPv6 addresses must have two or more ":"
